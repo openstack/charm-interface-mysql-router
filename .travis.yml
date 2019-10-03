@@ -1,0 +1,9 @@
+language: python
+python:
+  - "3.6"
+install: pip install tox-travis
+env:
+  - ENV=pep8
+  - ENV=py3
+script:
+  - tox -e $ENV
