@@ -9,7 +9,8 @@ class MySQLRouterRequires(RelationBase):
 
     # These remote data fields will be automatically mapped to accessors
     # with a basic documentation string provided.
-    auto_accessors = ['db_host', 'ssl_ca', 'ssl_cert', 'ssl_key']
+    auto_accessors = [
+        'db_host', 'ssl_ca', 'ssl_cert', 'ssl_key', 'wait_timeout']
 
     @hook('{requires:mysql-router}-relation-joined')
     def joined(self):

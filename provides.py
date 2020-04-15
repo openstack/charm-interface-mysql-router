@@ -75,13 +75,15 @@ class MySQLRouterProvides(reactive.Endpoint):
 
     def set_db_connection_info(
             self, relation_id, db_host, password,
-            allowed_units=None, prefix=None):
+            allowed_units=None, prefix=None, wait_timeout=None):
         """Send database connection information to the client.
 
         :param relation_id: Relation ID to set connection information on
         :type relation_id: str
         :param db_host: Host IP or hostname for connecting to the DB
         :type db_host: str
+        :param wait_timeout: Non-interactive wait timeout in seconds
+        :type wait_timeout: int
         :param password: Password for connecting to the DB
         :type password: str
         :param allowed_units: Space delimited unit names allowed to connect to
@@ -93,8 +95,12 @@ class MySQLRouterProvides(reactive.Endpoint):
         :returns: None, this function is called for its side effect
         :rtype: None
         """
-        # No prefix for db_host
+
+        # No prefix for db_host or wait_timeout
         self.relations[relation_id].to_publish["db_host"] = db_host
+        if wait_timeout:
+            self.relations[relation_id].to_publish["wait_timeout"] = (
+                wait_timeout)
         if not prefix:
             self.relations[relation_id].to_publish["password"] = password
             self.relations[relation_id].to_publish[
