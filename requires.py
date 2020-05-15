@@ -1,31 +1,39 @@
 from charmhelpers.core import hookenv
-from charms.reactive import RelationBase
-from charms.reactive import hook
-from charms.reactive import scopes
+import charms.reactive as reactive
 
 
-class MySQLRouterRequires(RelationBase):
-    scope = scopes.GLOBAL
+class MySQLRouterRequires(reactive.RelationBase):
+    scope = reactive.scopes.GLOBAL
 
     # These remote data fields will be automatically mapped to accessors
     # with a basic documentation string provided.
     auto_accessors = [
         'db_host', 'ssl_ca', 'ssl_cert', 'ssl_key', 'wait_timeout']
 
-    @hook('{requires:mysql-router}-relation-joined')
+    @reactive.hook('{requires:mysql-router}-relation-joined')
     def joined(self):
         self.set_state('{relation_name}.connected')
+        self.set_or_clear_available()
 
-    @hook('{requires:mysql-router}-relation-changed')
-    def changed(self):
+    def set_or_clear_available(self):
         if self.db_router_data_complete():
             self.set_state('{relation_name}.available')
+        else:
+            self.remove_state('{relation_name}.available')
         if self.proxy_db_data_complete():
             self.set_state('{relation_name}.available.proxy')
+        else:
+            self.remove_state('{relation_name}.available.proxy')
         if self.ssl_data_complete():
             self.set_state('{relation_name}.available.ssl')
+        else:
+            self.remove_state('{relation_name}.available.ssl')
 
-    @hook('{requires:mysql-router}-relation-{broken,departed}')
+    @reactive.hook('{requires:mysql-router}-relation-changed')
+    def changed(self):
+        self.joined()
+
+    @reactive.hook('{requires:mysql-router}-relation-{broken,departed}')
     def departed(self):
         # Clear state
         self.remove_state('{relation_name}.connected')
@@ -139,7 +147,7 @@ class MySQLRouterRequires(RelationBase):
             'db_host': self.db_host(),
         }
         # The mysql-router prefix + proxied db prefixes
-        if len(self.get_prefixes()) > 1:
+        if self.get_prefixes() and len(self.get_prefixes()) > 1:
             suffixes = ['_password', '_allowed_units']
             for prefix in self.get_prefixes():
                 for suffix in suffixes:

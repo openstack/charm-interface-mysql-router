@@ -67,7 +67,7 @@ class TestMySQLRouterRequires(unittest.TestCase):
 
         self._conversation = mock.MagicMock()
         self._conversation.relation_ids = self._rel_ids
-        self._conversation.scope = requires.scopes.GLOBAL
+        self._conversation.scope = requires.reactive.scopes.GLOBAL
         self._conversation.get_remote.side_effect = self.get_fake_remote_data
         self._conversation.get_local.side_effect = self.get_fake_local_data
 
@@ -125,18 +125,21 @@ class TestMySQLRouterRequires(unittest.TestCase):
             mock.call("{relation_name}.available"),
             mock.call("{relation_name}.available.proxy"),
             mock.call("{relation_name}.available.ssl")]
-        self.mysql_router.changed()
+        self.mysql_router.set_or_clear_available()
         self.set_state.assert_has_calls(_calls)
 
     def test_changed_not_available(self):
         self.patch_mysql_router('db_router_data_complete', False)
+        self.patch_mysql_router('joined')
         self._local_data = {"prefixes": ["myprefix"]}
-        self.mysql_router.changed()
+        self.mysql_router.set_or_clear_available()
         self.set_state.assert_not_called()
 
     def test_joined(self):
+        self.patch_mysql_router('set_or_clear_available')
         self.mysql_router.joined()
         self.set_state.assert_called_once_with('{relation_name}.connected')
+        self.set_or_clear_available.assert_called_once()
 
     def test_departed(self):
         self.mysql_router.departed()
