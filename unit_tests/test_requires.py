@@ -187,10 +187,11 @@ class TestMySQLRouterRequires(unittest.TestCase):
         assert self.mysql_router.proxy_db_data_complete() is False
 
     def test_ssl_data_incomplete(self):
+        self.patch_mysql_router('ssl_ca', "Certificate Authority")
         self.patch_mysql_router('ssl_cert', "somecert")
         self.patch_mysql_router('ssl_key', "somekey")
         assert self.mysql_router.ssl_data_complete() is True
-        self.ssl_key.return_value = None
+        self.ssl_ca.return_value = None
         assert self.mysql_router.ssl_data_complete() is False
 
     def test_local_accessors(self):

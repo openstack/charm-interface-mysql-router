@@ -161,10 +161,8 @@ class MySQLRouterRequires(reactive.RelationBase):
         """
         Check if optional ssl data provided by mysql is complete.
         """
-        # Note: ssl_ca can also be set but isn't required
         data = {
-            'ssl_cert': self.ssl_cert(),
-            'ssl_key': self.ssl_key(),
+            'ssl_ca': self.ssl_ca(),
         }
         if all(data.values()):
             return True

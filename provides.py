@@ -84,7 +84,8 @@ class MySQLRouterProvides(reactive.Endpoint):
 
     def set_db_connection_info(
             self, relation_id, db_host, password,
-            allowed_units=None, prefix=None, wait_timeout=None):
+            allowed_units=None, prefix=None, wait_timeout=None,
+            ssl_ca=None):
         """Send database connection information to the client.
 
         :param relation_id: Relation ID to set connection information on
@@ -110,6 +111,8 @@ class MySQLRouterProvides(reactive.Endpoint):
         if wait_timeout:
             self.relations[relation_id].to_publish["wait_timeout"] = (
                 wait_timeout)
+        if ssl_ca:
+            self.relations[relation_id].to_publish["ssl_ca"] = ssl_ca
         if not prefix:
             self.relations[relation_id].to_publish["password"] = password
             self.relations[relation_id].to_publish[
