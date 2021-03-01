@@ -56,6 +56,7 @@ class MySQLRouterRequires(reactive.RelationBase):
         relation_info = {
             prefix + '_username': username,
             prefix + '_hostname': hostname,
+            'private-address': hostname,
         }
         self.set_prefix(prefix)
         self.set_remote(**relation_info)

@@ -232,7 +232,8 @@ class TestMySQLRouterRequires(unittest.TestCase):
         _prefix = "prefix"
         _expected = {
             "{}_username".format(_prefix): _user,
-            "{}_hostname".format(_prefix): _host}
+            "{}_hostname".format(_prefix): _host,
+            "private-address": _host}
         self.mysql_router.configure_db_router(_user, _host, prefix=_prefix)
         self.set_remote.assert_called_once_with(**_expected)
         self.set_local.assert_called_once_with(**_expected)
