@@ -41,12 +41,17 @@ class MySQLRouterRequires(reactive.RelationBase):
         self.remove_state('{relation_name}.proxy.available')
         self.remove_state('{relation_name}.available.ssl')
         # Check if this is the last unit
+        last_unit = True
         for conversation in self.conversations():
             for rel_id in conversation.relation_ids:
                 if len(hookenv.related_units(rel_id)) > 0:
                     # This is not the last unit so reevaluate state
                     self.joined()
                     self.changed()
+                    last_unit = False
+        if last_unit:
+            # Bug #1972883
+            self.set_local('prefixes', [])
 
     def configure_db_router(self, username, hostname, prefix):
         """

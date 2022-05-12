@@ -271,3 +271,15 @@ class TestMySQLRouterRequires(unittest.TestCase):
         _second = "secondprefix"
         self.mysql_router.set_prefix(_second)
         self.set_local.assert_called_once_with("prefixes", [_prefix, _second])
+
+    @mock.patch.object(requires.hookenv, 'related_units')
+    def test_ly_departed(self, related_units):
+        self._local_data = {"prefixes": ["myprefix"]}
+
+        related_units.return_value = ['unit/1']
+        self.mysql_router.departed()
+        self.assertFalse(self.set_local.called)
+
+        related_units.return_value = []
+        self.mysql_router.departed()
+        self.set_local.assert_called_once_with("prefixes", [])
