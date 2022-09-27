@@ -1,57 +1,91 @@
-from charmhelpers.core import hookenv
-import charms.reactive as reactive
+from charmhelpers.core import unitdata
+from charms.reactive import (
+    Endpoint,
+    when,
+    set_flag,
+    clear_flag,
+)
 
 
-class MySQLRouterRequires(reactive.RelationBase):
-    scope = reactive.scopes.GLOBAL
+# NOTE: fork of relations.AutoAccessors for forwards compat behaviour
+class MySQLRouterAutoAccessors(type):
+    """
+    Metaclass that converts fields referenced by ``auto_accessors`` into
+    accessor methods with very basic doc strings.
+    """
+    def __new__(cls, name, parents, dct):
+        for field in dct.get('auto_accessors', []):
+            meth_name = field.replace('-', '_')
+            meth = cls._accessor(field)
+            meth.__name__ = meth_name
+            meth.__module__ = dct.get('__module__')
+            meth.__doc__ = 'Get the %s, if available, or None.' % field
+            dct[meth_name] = meth
+        return super(MySQLRouterAutoAccessors, cls).__new__(
+            cls, name, parents, dct
+        )
 
-    # These remote data fields will be automatically mapped to accessors
-    # with a basic documentation string provided.
-    auto_accessors = [
-        'db_host', 'ssl_ca', 'ssl_cert', 'ssl_key', 'wait_timeout']
+    @staticmethod
+    def _accessor(field):
+        def __accessor(self):
+            return self.all_joined_units.received_raw.get(field)
+        return __accessor
 
-    @reactive.hook('{requires:mysql-router}-relation-joined')
+
+class MySQLRouterRequires(Endpoint, metaclass=MySQLRouterAutoAccessors):
+
+    key = 'reactive.conversations.db-router.global.local-data.{}'
+
+    kv = unitdata.kv()
+
+    auto_accessors = ['db_host', 'ssl_ca', 'ssl_cert', 'ssl_key',
+                      'wait_timeout']
+
+    @when('endpoint.{endpoint_name}.joined')
     def joined(self):
-        self.set_state('{relation_name}.connected')
+        set_flag(self.expand_name('{endpoint_name}.connected'))
         self.set_or_clear_available()
 
-    def set_or_clear_available(self):
-        if self.db_router_data_complete():
-            self.set_state('{relation_name}.available')
-        else:
-            self.remove_state('{relation_name}.available')
-        if self.proxy_db_data_complete():
-            self.set_state('{relation_name}.available.proxy')
-        else:
-            self.remove_state('{relation_name}.available.proxy')
-        if self.ssl_data_complete():
-            self.set_state('{relation_name}.available.ssl')
-        else:
-            self.remove_state('{relation_name}.available.ssl')
-
-    @reactive.hook('{requires:mysql-router}-relation-changed')
+    @when('endpoint.{endpoint_name}.changed')
     def changed(self):
         self.joined()
 
-    @reactive.hook('{requires:mysql-router}-relation-{broken,departed}')
+    def set_or_clear_available(self):
+        if self.db_router_data_complete():
+            set_flag(self.expand_name('{endpoint_name}.available'))
+        else:
+            clear_flag(self.expand_name('{endpoint_name}.available'))
+        if self.proxy_db_data_complete():
+            set_flag(self.expand_name('{endpoint_name}.available.proxy'))
+        else:
+            clear_flag(self.expand_name('{endpoint_name}.available.proxy'))
+        if self.ssl_data_complete():
+            set_flag(self.expand_name('{endpoint_name}.available.ssl'))
+        else:
+            clear_flag(self.expand_name('{endpoint_name}.available.ssl'))
+
+    @when('endpoint.{endpoint_name}.broken')
+    def broken(self):
+        self.departed()
+
+    @when('endpoint.{endpoint_name}.departed')
     def departed(self):
         # Clear state
-        self.remove_state('{relation_name}.connected')
-        self.remove_state('{relation_name}.available')
-        self.remove_state('{relation_name}.proxy.available')
-        self.remove_state('{relation_name}.available.ssl')
+        clear_flag(self.expand_name('{endpoint_name}.connected'))
+        clear_flag(self.expand_name('{endpoint_name}.available'))
+        clear_flag(self.expand_name('{endpoint_name}.proxy.available'))
+        clear_flag(self.expand_name('{endpoint_name}.available.ssl'))
         # Check if this is the last unit
         last_unit = True
-        for conversation in self.conversations():
-            for rel_id in conversation.relation_ids:
-                if len(hookenv.related_units(rel_id)) > 0:
-                    # This is not the last unit so reevaluate state
-                    self.joined()
-                    self.changed()
-                    last_unit = False
+        for relation in self.relations:
+            if len(relation.units) > 0:
+                # This is not the last unit so reevaluate state
+                self.joined()
+                self.changed()
+                last_unit = False
         if last_unit:
             # Bug #1972883
-            self.set_local('prefixes', [])
+            self._set_local('prefixes', [])
 
     def configure_db_router(self, username, hostname, prefix):
         """
@@ -64,8 +98,10 @@ class MySQLRouterRequires(reactive.RelationBase):
             'private-address': hostname,
         }
         self.set_prefix(prefix)
-        self.set_remote(**relation_info)
-        self.set_local(**relation_info)
+        for relation in self.relations:
+            for k, v in relation_info.items():
+                relation.to_publish_raw[k] = v
+                self._set_local(k, v)
 
     def configure_proxy_db(self, database, username, hostname, prefix):
         """
@@ -78,55 +114,82 @@ class MySQLRouterRequires(reactive.RelationBase):
             prefix + '_hostname': hostname,
         }
         self.set_prefix(prefix)
-        self.set_remote(**relation_info)
-        self.set_local(**relation_info)
+        for relation in self.relations:
+            for k, v in relation_info.items():
+                relation.to_publish_raw[k] = v
+                self._set_local(k, v)
+
+    def _set_local(self, key, value):
+        self.kv.set(self.key.format(key), value)
+
+    def _get_local(self, key):
+        return self.kv.get(self.key.format(key))
 
     def set_prefix(self, prefix):
         """
         Store all of the database prefixes in a list.
         """
-        prefixes = self.get_local('prefixes')
-        if prefixes:
-            if prefix not in prefixes:
-                self.set_local('prefixes', prefixes + [prefix])
-        else:
-            self.set_local('prefixes', [prefix])
+        prefixes = self._get_local('prefixes')
+        for relation in self.relations:
+            if prefixes:
+                if prefix not in prefixes:
+                    self._set_local('prefixes', prefixes + [prefix])
+            else:
+                self._set_local('prefixes', [prefix])
 
     def get_prefixes(self):
         """
         Return the list of saved prefixes.
         """
-        return self.get_local('prefixes')
+        return self._get_local('prefixes')
 
     def database(self, prefix):
         """
         Return a configured database name.
         """
-        return self.get_local(prefix + '_database')
+        return self._get_local(prefix + '_database')
 
     def username(self, prefix):
         """
         Return a configured username.
         """
-        return self.get_local(prefix + '_username')
+        return self._get_local(prefix + '_username')
 
     def hostname(self, prefix):
         """
         Return a configured hostname.
         """
-        return self.get_local(prefix + '_hostname')
+        return self._get_local(prefix + '_hostname')
+
+    def _received_app(self, key):
+        value = None
+        for relation in self.relations:
+            value = relation.received_app_raw.get(key)
+            if value:
+                return value
+        # NOTE(ganso): backwards compatibility with non-app-bag below
+        if not value:
+            return self.all_joined_units.received_raw.get(key)
 
     def password(self, prefix):
         """
         Return a database password.
         """
-        return self.get_remote(prefix + '_password')
+        return self._received_app(prefix + '_password')
 
     def allowed_units(self, prefix):
         """
         Return a database's allowed_units.
         """
-        return self.get_remote(prefix + '_allowed_units')
+        return self._received_app(prefix + '_allowed_units')
+
+    def _read_suffixes(self, suffixes):
+        data = {}
+        for prefix in self.get_prefixes():
+            for suffix in suffixes:
+                key = prefix + suffix
+                data[key] = self._received_app(key)
+        return data
 
     def db_router_data_complete(self):
         """
@@ -137,10 +200,7 @@ class MySQLRouterRequires(reactive.RelationBase):
         }
         if self.get_prefixes():
             suffixes = ['_password']
-            for prefix in self.get_prefixes():
-                for suffix in suffixes:
-                    key = prefix + suffix
-                    data[key] = self.get_remote(key)
+            data.update(self._read_suffixes(suffixes))
             if all(data.values()):
                 return True
         return False
@@ -155,10 +215,7 @@ class MySQLRouterRequires(reactive.RelationBase):
         # The mysql-router prefix + proxied db prefixes
         if self.get_prefixes() and len(self.get_prefixes()) > 1:
             suffixes = ['_password', '_allowed_units']
-            for prefix in self.get_prefixes():
-                for suffix in suffixes:
-                    key = prefix + suffix
-                    data[key] = self.get_remote(key)
+            data.update(self._read_suffixes(suffixes))
             if all(data.values()):
                 return True
         return False

@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-import unittest
+import charms_openstack.test_utils as test_utils
 from unittest import mock
 
 import requires
@@ -30,7 +29,7 @@ def mock_hook(*args, **kwargs):
     return inner
 
 
-class TestMySQLRouterRequires(unittest.TestCase):
+class TestMySQLRouterRequires(test_utils.PatchHelper):
 
     @classmethod
     def setUpClass(cls):
@@ -61,24 +60,27 @@ class TestMySQLRouterRequires(unittest.TestCase):
         self._patches = {}
         self._patches_start = {}
 
-        self._rel_ids = ["mysql-router:3"]
+        self._rel_ids = ["db-router:3"]
         self._remote_data = {}
+        self._published_data = {}
         self._local_data = {}
 
-        self._conversation = mock.MagicMock()
-        self._conversation.relation_ids = self._rel_ids
-        self._conversation.scope = requires.reactive.scopes.GLOBAL
-        self._conversation.get_remote.side_effect = self.get_fake_remote_data
-        self._conversation.get_local.side_effect = self.get_fake_local_data
-
         # The Relation object
+        self.fake_relation = mock.MagicMock()
+        self.fake_unit = mock.MagicMock()
+        self.fake_unit.unit_name = "unit/1"
+        self.fake_relation.relation_id = self._rel_ids[0]
+        self.fake_relation.units = [self.fake_unit]
         self.mysql_router = requires.MySQLRouterRequires(
-            'mysql-router', [self._conversation])
-        self.patch_mysql_router('conversations', [self._conversation])
-        self.patch_mysql_router('set_remote')
-        self.patch_mysql_router('set_local')
-        self.patch_mysql_router('set_state')
-        self.patch_mysql_router('remove_state')
+            'mysql-router', self._rel_ids)
+        self.mysql_router._get_local = mock.MagicMock(
+            side_effect=self.get_fake_local_data)
+        self.mysql_router.relations[0] = self.fake_relation
+        self.fake_relation.to_publish_raw = self._published_data
+        self.fake_relation.received_app_raw = self._remote_data
+        self.patch_mysql_router('_set_local')
+        self.patch_object(requires, "clear_flag")
+        self.patch_object(requires, "set_flag")
         self.patch_mysql_router('db_host', "10.5.0.21")
         self.patch_mysql_router('wait_timeout', 90)
 
@@ -97,9 +99,6 @@ class TestMySQLRouterRequires(unittest.TestCase):
         started.return_value = return_value
         self._patches_start[attr] = started
         setattr(self, attr, started)
-
-    def get_fake_remote_data(self, key, default=None):
-        return self._remote_data.get(key) or default
 
     def get_fake_local_data(self, key, default=None):
         return self._local_data.get(key) or default
@@ -122,48 +121,51 @@ class TestMySQLRouterRequires(unittest.TestCase):
         self.patch_mysql_router('ssl_data_complete', True)
         self._local_data = {"prefixes": ["myprefix"]}
         _calls = [
-            mock.call("{relation_name}.available"),
-            mock.call("{relation_name}.available.proxy"),
-            mock.call("{relation_name}.available.ssl")]
+            mock.call("mysql-router.available"),
+            mock.call("mysql-router.available.proxy"),
+            mock.call("mysql-router.available.ssl")]
         self.mysql_router.set_or_clear_available()
-        self.set_state.assert_has_calls(_calls)
+        self.set_flag.assert_has_calls(_calls)
 
     def test_changed_not_available(self):
         self.patch_mysql_router('db_router_data_complete', False)
         self.patch_mysql_router('joined')
         self._local_data = {"prefixes": ["myprefix"]}
         self.mysql_router.set_or_clear_available()
-        self.set_state.assert_not_called()
+        self.set_flag.assert_not_called()
 
     def test_joined(self):
         self.patch_mysql_router('set_or_clear_available')
         self.mysql_router.joined()
-        self.set_state.assert_called_once_with('{relation_name}.connected')
+        self.set_flag.assert_called_once_with('mysql-router.connected')
         self.set_or_clear_available.assert_called_once()
 
     def test_departed(self):
         self.mysql_router.departed()
         _calls = [
-            mock.call("{relation_name}.available")]
-        self.remove_state.assert_has_calls(_calls)
+            mock.call('mysql-router.connected'),
+            mock.call("mysql-router.available"),
+            mock.call('mysql-router.proxy.available'),
+            mock.call('mysql-router.available.ssl')]
+        self.clear_flag.assert_has_calls(_calls)
 
     def test_db_router_data_complete_missing_prefix(self):
-        self._remote_data = {"password": "1234",
-                             "allowed_units": "unit/1"}
+        self._remote_data.update({"password": "1234",
+                                  "allowed_units": "unit/1"})
         assert self.mysql_router.db_router_data_complete() is False
 
     def test_db_router_data_complete(self):
         self._local_data = {"prefixes": ["myprefix"]}
-        self._remote_data = {"myprefix_password": "1234",
-                             "myprefix_allowed_units": "unit/1"}
+        self._remote_data.update({"myprefix_password": "1234",
+                                  "myprefix_allowed_units": "unit/1"})
         assert self.mysql_router.db_router_data_complete() is True
         self.db_host.return_value = None
         assert self.mysql_router.db_router_data_complete() is False
 
     def test_db_router_data_complete_wait_timeout(self):
         self._local_data = {"prefixes": ["myprefix"]}
-        self._remote_data = {"myprefix_password": "1234",
-                             "myprefix_allowed_units": "unit/1"}
+        self._remote_data.update({"myprefix_password": "1234",
+                                  "myprefix_allowed_units": "unit/1"})
         # Wait timeout is an optional value and should not affect data complete
         self.wait_timeout.return_value = None
         assert self.mysql_router.db_router_data_complete() is True
@@ -172,16 +174,16 @@ class TestMySQLRouterRequires(unittest.TestCase):
 
     def test_proxy_db_data_incomplete(self):
         self._local_data = {"prefixes": ["myprefix"]}
-        self._remote_data = {"myprefix_password": "1234",
-                             "myprefix_allowed_units": "unit/1"}
+        self._remote_data.update({"myprefix_password": "1234",
+                                  "myprefix_allowed_units": "unit/1"})
         assert self.mysql_router.proxy_db_data_complete() is False
 
     def test_proxy_db_data_complete(self):
         self._local_data = {"prefixes": ["myprefix", "db"]}
-        self._remote_data = {"myprefix_password": "1234",
-                             "myprefix_allowed_units": "unit/1",
-                             "db_password": "1234",
-                             "db_allowed_units": "unit/1"}
+        self._remote_data.update({"myprefix_password": "1234",
+                                  "myprefix_allowed_units": "unit/1",
+                                  "db_password": "1234",
+                                  "db_allowed_units": "unit/1"})
         assert self.mysql_router.proxy_db_data_complete() is True
         self.db_host.return_value = None
         assert self.mysql_router.proxy_db_data_complete() is False
@@ -220,9 +222,8 @@ class TestMySQLRouterRequires(unittest.TestCase):
         for key, test in _tests.items():
             self.assertEqual(test(_prefix), None)
         # Set
-        self._local_data = {"prefixes": [_prefix]}
         for key, test in _tests.items():
-            self._remote_data = {"{}_{}".format(_prefix, key): _value}
+            self._remote_data.update({"{}_{}".format(_prefix, key): _value})
             self.assertEqual(test(_prefix), _value)
 
     def test_configure_db_router(self):
@@ -234,9 +235,15 @@ class TestMySQLRouterRequires(unittest.TestCase):
             "{}_username".format(_prefix): _user,
             "{}_hostname".format(_prefix): _host,
             "private-address": _host}
+        calls = [
+            mock.call('prefix_username', _user),
+            mock.call('prefix_hostname', _host),
+            mock.call('private-address', _host),
+        ]
         self.mysql_router.configure_db_router(_user, _host, prefix=_prefix)
-        self.set_remote.assert_called_once_with(**_expected)
-        self.set_local.assert_called_once_with(**_expected)
+        self._set_local.has_calls(calls)
+        self.assertTrue(all(self._published_data[k] == _expected[k]
+                            for k in _expected.keys()))
         self.set_prefix.assert_called_once()
 
     def test_configure_proxy_db(self):
@@ -250,8 +257,15 @@ class TestMySQLRouterRequires(unittest.TestCase):
             "{}_username".format(_prefix): _user,
             "{}_hostname".format(_prefix): _host}
         self.mysql_router.configure_proxy_db(_db, _user, _host, prefix=_prefix)
-        self.set_remote.assert_called_once_with(**_expected)
-        self.set_local.assert_called_once_with(**_expected)
+        calls = [
+            mock.call('prefix_database', _db),
+            mock.call('prefix_username', _user),
+            mock.call('prefix_hostname', _host)
+        ]
+        self._set_local.has_calls(calls)
+
+        self.assertTrue(all(self._published_data[k] == _expected[k]
+                            for k in _expected.keys()))
         self.set_prefix.assert_called_once()
 
     def test_get_prefix(self):
@@ -264,22 +278,21 @@ class TestMySQLRouterRequires(unittest.TestCase):
         # First
         _prefix = "prefix"
         self.mysql_router.set_prefix(_prefix)
-        self.set_local.assert_called_once_with("prefixes", [_prefix])
+        self._set_local.assert_called_once_with("prefixes", [_prefix])
         # More than one
-        self.set_local.reset_mock()
+        self._set_local.reset_mock()
         self._local_data = {"prefixes": [_prefix]}
         _second = "secondprefix"
         self.mysql_router.set_prefix(_second)
-        self.set_local.assert_called_once_with("prefixes", [_prefix, _second])
+        self._set_local.assert_called_once_with("prefixes", [_prefix, _second])
 
-    @mock.patch.object(requires.hookenv, 'related_units')
-    def test_ly_departed(self, related_units):
+    def test_ly_departed(self):
         self._local_data = {"prefixes": ["myprefix"]}
+        self.patch_mysql_router('ssl_ca', "fake_ca")
 
-        related_units.return_value = ['unit/1']
         self.mysql_router.departed()
-        self.assertFalse(self.set_local.called)
+        self.assertFalse(self._set_local.called)
 
-        related_units.return_value = []
+        self.mysql_router.relations[0].units = []
         self.mysql_router.departed()
-        self.set_local.assert_called_once_with("prefixes", [])
+        self._set_local.assert_called_once_with("prefixes", [])
