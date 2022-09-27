@@ -139,6 +139,7 @@ class TestMySQLRouterProvides(test_utils.PatchHelper):
             mock.call("password", _pw),
             mock.call("allowed_units", self.fake_unit.unit_name)]
         self.fake_relation.to_publish.__setitem__.assert_has_calls(_calls)
+        self.fake_relation.to_publish_app.__setitem__.assert_has_calls(_calls)
 
     def test_set_db_connection_info_prefixed(self):
         _p = "prefix"
@@ -154,6 +155,7 @@ class TestMySQLRouterProvides(test_utils.PatchHelper):
             mock.call("{}_password".format(_p), _pw),
             mock.call("{}_allowed_units".format(_p), self.fake_unit.unit_name)]
         self.fake_relation.to_publish.__setitem__.assert_has_calls(_calls)
+        self.fake_relation.to_publish_app.__setitem__.assert_has_calls(_calls)
 
     def test_set_db_connection_info_wait_timeout(self):
         _wto = 90
@@ -171,3 +173,4 @@ class TestMySQLRouterProvides(test_utils.PatchHelper):
             mock.call("{}_password".format(_p), _pw),
             mock.call("{}_allowed_units".format(_p), self.fake_unit.unit_name)]
         self.fake_relation.to_publish.__setitem__.assert_has_calls(_calls)
+        self.fake_relation.to_publish_app.__setitem__.assert_has_calls(_calls)

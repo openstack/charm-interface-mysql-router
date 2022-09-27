@@ -105,20 +105,27 @@ class MySQLRouterProvides(reactive.Endpoint):
         :returns: None, this function is called for its side effect
         :rtype: None
         """
+        self._set_db_connection_info(
+            getattr(self.relations[relation_id], 'to_publish_app'),
+            db_host, password, allowed_units, prefix, wait_timeout, ssl_ca)
+        # NOTE(ganso): Deprecated non-app-bag data for backwards compatibility
+        self._set_db_connection_info(
+            getattr(self.relations[relation_id], 'to_publish'),
+            db_host, password, allowed_units, prefix, wait_timeout, ssl_ca)
 
+    def _set_db_connection_info(
+            self, publish_prop, db_host, password,
+            allowed_units=None, prefix=None, wait_timeout=None,
+            ssl_ca=None):
         # No prefix for db_host or wait_timeout
-        self.relations[relation_id].to_publish["db_host"] = db_host
+        publish_prop["db_host"] = db_host
         if wait_timeout:
-            self.relations[relation_id].to_publish["wait_timeout"] = (
-                wait_timeout)
+            publish_prop["wait_timeout"] = wait_timeout
         if ssl_ca:
-            self.relations[relation_id].to_publish["ssl_ca"] = ssl_ca
+            publish_prop["ssl_ca"] = ssl_ca
         if not prefix:
-            self.relations[relation_id].to_publish["password"] = password
-            self.relations[relation_id].to_publish[
-                "allowed_units"] = allowed_units
+            publish_prop["password"] = password
+            publish_prop["allowed_units"] = allowed_units
         else:
-            self.relations[relation_id].to_publish[
-                "{}_password".format(prefix)] = password
-            self.relations[relation_id].to_publish[
-                "{}_allowed_units".format(prefix)] = allowed_units
+            publish_prop["{}_password".format(prefix)] = password
+            publish_prop["{}_allowed_units".format(prefix)] = allowed_units
